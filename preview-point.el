@@ -138,7 +138,8 @@ If PT is nil, use point of OV's buffer."
 
 (defun preview-point-p ()
   "Return non-nil if current preview type is a point-preview."
-  (eq preview-image-type 'point-dvisvgm))
+  (memq preview-image-type '(point-dvisvgm
+                             point-dvipng)))
 
 (defun preview-point-disable (ovr)
   "Disable overlay OVR after source edits.
@@ -430,6 +431,18 @@ ORIG-FUN is the original function.  ARGS are its arguments."
               (args ((image-type svg)
                      (process-name "Preview-DviSVGM")
                      (command preview-dvisvgm-command)
+                     (ascent (lambda (&rest _) 'center)))))
+	    preview-image-creators
+	    :test #'equal)
+
+
+(cl-pushnew '(point-dvipng
+              (open preview-gs-open preview-dvi-process-setup)
+	      (place preview-point-place preview-dvi-place)
+	      (close preview-point-close preview-dvi-close)
+              (args ((image-type png)
+                     (process-name "Preview-DviPNG")
+                     (command preview-dvipng-command)
                      (ascent (lambda (&rest _) 'center)))))
 	    preview-image-creators
 	    :test #'equal)
