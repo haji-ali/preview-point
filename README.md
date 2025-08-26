@@ -52,7 +52,7 @@ The default configuration assumes that `dvisvgm` is installed.
       )
 
 ;; Enable automatic preview update on change.
-(add-hook 'LaTeX-mode
+(add-hook 'LaTeX-mode-hook
           (lambda () (add-hook 'after-change-functions
                                #'preview-point-buf-change nil t)))
 ```
