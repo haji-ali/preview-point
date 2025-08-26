@@ -243,7 +243,7 @@ See the original `preview-dvipng-abort'"
         ;; pathological case: no previews although we sure thought so.
         (delete-process process)
         (unless (eq (process-status process) 'signal)
-          (funcall abort)))))
+          (preview-dvi-abort)))))
 
 (defun preview-dvi-config (key)
   "Return the value associated with KEY in the current preview config.
@@ -281,13 +281,12 @@ deletions. Return list of overlays placed."
       ;; one in the overlay. We need to make sure that these overlays do not
       ;; have the filename of our preview image in their 'filename property to
       ;; avoid eager file deletion
-      (when-let ((_ preview-leave-open-previews-visible)
-                 (filename (cadr (overlay-get ov 'preview-image))))
+      (when preview-leave-open-previews-visible
+        (when-let (filename (cadr (overlay-get ov 'preview-image)))
         (let ((start (or (overlay-start ov) (point-min)))
               (end (or (overlay-end ov) (point-max)))
               (exception ov)
-              (timestamp (overlay-get ov 'timestamp))
-              entry)
+                (timestamp (overlay-get ov 'timestamp)))
           (dolist (oov (overlays-in start end)) ;; Old overlays
             (when (and (not (eq oov exception))
                        (overlay-get oov 'preview-state)
@@ -304,7 +303,7 @@ deletions. Return list of overlays placed."
                   ;; Add the filename to the current overlay instead
                   ;; if it's not already there
                   (unless (assoc filename files-ov)
-                    (overlay-put ov 'filenames (cons entry files-ov))))))))))
+                      (overlay-put ov 'filenames (cons entry files-ov)))))))))))
     ovl))
 
 ;;; DVIPNG
@@ -312,18 +311,11 @@ deletions. Return list of overlays placed."
   "Return a shell command for starting a DviPNG process.
 The result is a cons cell (COMMAND . TEMPDIR)."
   (let* (;; (file preview-gs-file)
-         tempdir
          (res (/ (* (car preview-resolution)
                     (preview-hook-enquiry preview-scale))
                  (preview-get-magnification)))
          (resolution  (format " -D%d " res))
-         (colors (preview-dvipng-color-string preview-colors res))
-         (command (with-current-buffer TeX-command-buffer
-                    (prog1
-                        (concat (TeX-command-expand preview-dvipng-command)
-                                " " colors resolution)
-                      (setq tempdir TeX-active-tempdir))))
-         (name "Preview-DviPNG"))
+         (colors (preview-dvipng-color-string preview-colors res)))
     (with-current-buffer TeX-command-buffer
       (let ((cmd (concat (TeX-command-expand preview-dvipng-command)
                          " " colors resolution)))

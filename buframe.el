@@ -87,7 +87,7 @@
     (let ((right (point))
           (cur-column (current-column)))
       (while (< (point) end)
-        (goto-char (min (point-at-eol) end))
+        (goto-char (min (pos-eol) end))
         (when (and (> (current-column) cur-column)
                    (pos-visible-in-window-p))
           (setq right (point)
@@ -127,8 +127,7 @@
                          (or (frame-parameter frame 'tab-line-height) 0)
                          (or (frame-parameter frame 'header-line-height) 0)
                          (- (/ pframe-height 2))
-                         y-mid))
-               (y-bottom (+ y-top pframe-height)))
+                         y-mid)))
           (cons (max 0 (min x (- xmax (or pframe-width 0))))
                 (max 0 (min y-top (- ymax (or pframe-height 0))))))))))
 
@@ -141,7 +140,7 @@
       ;;; XXX HACK from corfu install mouse ignore map
       (use-local-map buframe--frame-mouse-ignore-map)
       (dolist (vars (list buframe--default-buf-parameters locals))
-        (dolist (var buframe--default-buf-parameters)
+        (dolist (var vars)
           (set (make-local-variable (car var)) (cdr var))))
       (setq-local face-remapping-alist (copy-tree fr)
                   line-spacing ls)
@@ -380,8 +379,8 @@ compared to when the function is called."
 
 If FRAME-OR-NAME is nil, run FN on all buframes.
 BUFFER can be:
-  'parent      – run only if parent buffer is current
-  'not-parent  – run only if parent buffer is not current
+  \\='parent      – run only if parent buffer is current
+  \\='not-parent  – run only if parent buffer is not current
   a buffer     – run only if BUFFER is current."
   (if frame-or-name
       (when-let (frame (buframe--find frame-or-name))

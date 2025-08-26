@@ -57,7 +57,8 @@ values."
 (defcustom preview-point-auto-p 'texmathp
   "Function to test if a point should be previewed automatically.
 This is called with no arguments at (point) when there is not a
-preview already.")
+preview already."
+  :type 'symbol)
 
 (defcustom preview-point-progress-indicators 'icons
   "What to show for progress indication.
@@ -65,7 +66,10 @@ preview already.")
 Can be:
 - `icons' : use preview icons.
 - `faces' : use faces for highlighting.
-Any other value (including nil) disables progress display.")
+Any other value (including nil) disables progress display."
+  :type '(choice
+          (const :tag "Icons (default)" icons)
+          (const :tag "Faces" faces)))
 
 (defface preview-point-disabled-face
   '((t (:inherit shadow)))
@@ -82,13 +86,10 @@ Any other value (including nil) disables progress display.")
 (defvar preview-point--frame-overlay nil
   "The overlay currently shown in the preview popup frame.")
 
-(defun preview-point-popup-frame (ov str &optional pt)
+(defun preview-point-popup-frame (ov str)
   "Show overlay OV displaying STR in a buframe popup at PT.
 If PT is nil, use the current point in OV's buffer."
-  (let* ((master-buffer (overlay-buffer ov))
-         (parent (window-frame))
-         (pt (or pt (with-current-buffer master-buffer (point))))
-         (buf (buframe--make-buffer
+  (let* ((buf (buframe--make-buffer
                " *preview-point-buffer*"
                (car-safe (cddr (cdr-safe preview-point-show-in)))))
          (max-image-size
@@ -117,7 +118,7 @@ If PT is nil, use the current point in OV's buffer."
                       'buframe-position-right-of-overlay)
                   frame preview-point--frame-overlay)))
              buf
-             (window-buffer)
+             (overlay-buffer ov)
              (window-frame)
              (car-safe (cdr (cdr-safe preview-point-show-in))))))
 
@@ -246,7 +247,7 @@ SHOW-CONSTRUCT forces showing under-construction previews."
             (if frame-p
                 (setq
                  preview-point--frame
-                 (preview-point-popup-frame ov str pt))
+                 (preview-point-popup-frame ov str))
               (overlay-put ov preview-point-show-in str)))
         (when (equal preview-point--frame-overlay ov)
           ;; (unless (equal preview-point--frame-overlay ov)
@@ -279,8 +280,7 @@ Toggle previews as point enters or leaves overlays."
   (if (not (preview-point-p))
       (preview-move-point)
     (preview-point-check-changes)
-    (let* (newlist
-           (pt (point))
+    (let* ((pt (point))
            (lst (overlays-at pt)))
       ;; Hide any open overlays
       (when-let (ov preview-point--frame-overlay)
