@@ -286,7 +286,7 @@ Toggle previews as point enters or leaves overlays."
     (let* ((pt (point))
            (lst (overlays-at pt)))
       ;; Hide any open overlays
-      (when-let* (ov preview-point--frame-overlay)
+      (when-let* ((ov preview-point--frame-overlay))
         (and (overlay-buffer ov)
              (overlay-get ov 'preview-state)
              (not (eq (overlay-get ov 'preview-state) 'inactive))
