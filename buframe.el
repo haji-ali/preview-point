@@ -95,19 +95,23 @@
         (forward-line 1))
       right)))
 
-(defun buframe-position-right-of-overlay (frame ov)
+(defun buframe-position-right-of-overlay (frame ov &optional location)
   "Return pixel position (X . Y) for FRAME, placed to the right of overlay OV."
   (when-let* ((buffer (overlay-buffer ov))
               (window (get-buffer-window buffer 'visible)))
-    (let* ((posn
-            (posn-at-point
+    (let* ((location (or location 'middle))
+           (posn-start (posn-at-point (overlay-start ov) window))
+           (posn-end (posn-at-point (overlay-end ov) window))
+           (posn
+            (pcase location
+              ('middle (posn-at-point
              (with-current-buffer (overlay-buffer ov)
                (buframe--right-visible
                 (overlay-start ov)
                 (overlay-end ov)))
              window))
-           (posn-start (posn-at-point (overlay-start ov) window))
-           (posn-end (posn-at-point (overlay-end ov) window)))
+              ('top posn-start)
+              ('bottom posn-end))))
       (when (or posn posn-start posn-end)
         (let* ((pframe-width (frame-pixel-width frame))
                (pframe-height (frame-pixel-height frame))
@@ -115,9 +119,12 @@
                (xmax (frame-pixel-width parent-frame))
                (ymax (frame-pixel-height parent-frame))
                (x (+ (car (window-inside-pixel-edges window))
-                     (default-font-width) ;; Add another character for the cursor
+                     (if (eq location 'middel)
+                         (default-font-width)
+                       0) ;; Add another character for the cursor
                      (- (or (car (posn-x-y (or posn posn-end posn-start))) 0)
-                        (or (car (posn-object-x-y (or posn posn-end posn-start)))
+                        (or (car (posn-object-x-y (or posn
+                                                      posn-end posn-start)))
                             0))))
                (top-xy (posn-x-y (or posn-start posn posn-end)))
                (bottom-xy (posn-x-y (or posn-end posn posn-start)))
@@ -126,8 +133,14 @@
                (y-top (+ (cadr (window-pixel-edges window))
                          (or (frame-parameter frame 'tab-line-height) 0)
                          (or (frame-parameter frame 'header-line-height) 0)
+                         (pcase location
+                           ('middle (+
                          (- (/ pframe-height 2))
-                         y-mid)))
+                                     (/ (+ (cdr top-xy) (cdr bottom-xy)
+                                           font-height)
+                                        2)))
+                           ('top (- (cdr top-xy) pframe-height))
+                           ('bottom (+ (cdr bottom-xy) font-height))))))
           (cons (max 0 (min x (- xmax (or pframe-width 0))))
                 (max 0 (min y-top (- ymax (or pframe-height 0))))))))))
 
