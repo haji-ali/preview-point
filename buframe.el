@@ -99,16 +99,20 @@
   "Return pixel position (X . Y) for FRAME, placed to the right of overlay OV."
   (when-let* ((buffer (overlay-buffer ov))
               (window (get-buffer-window buffer 'visible)))
-    (let* ((location (or location 'middle))
-           (posn-start (posn-at-point (overlay-start ov) window))
-           (posn-end (posn-at-point (overlay-end ov) window))
+    (let* ((start (overlay-start ov))
+           (end (overlay-end ov))
+           (posn-start (posn-at-point start window))
+           (posn-end (posn-at-point end window))
+           (location
+            (if (or (and (eq location 'top) posn-start)
+                    (and (eq location 'bottom) posn-end))
+                location
+              'middle))
            (posn
             (pcase location
               ('middle (posn-at-point
              (with-current-buffer (overlay-buffer ov)
-               (buframe--right-visible
-                (overlay-start ov)
-                (overlay-end ov)))
+                          (buframe--right-visible start end))
              window))
               ('top posn-start)
               ('bottom posn-end))))
