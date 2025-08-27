@@ -35,21 +35,16 @@ The default configuration assumes that `dvisvgm` is installed.
 
 ;; Configuration of preview for optimal behavior -- Optional
 (setq
-   buframe-update-debounce-delay 0  ;; No delay in buframe
    preview-leave-open-previews-visible t
    preview-auto-cache-preamble t
-   preview-locating-previews-message nil
-   preview-scale-function (lambda () (* (funcall
-                                         (preview-scale-from-face))
-                                        1.5)))
+   preview-locating-previews-message nil)
 
 ;; Always use DVI to generate cleaner previews. Requires special handling of `hyperref`
 (setq preview-LaTeX-command-replacements '(preview-LaTeX-disable-pdfoutput))
 
 ;; Customize behavior of point-preview
-(setq preview-point-progress-indicators 'faces
-      preview-point-show-in 'buframe ;; or 'after-string for an inline preview intead.
-      )
+(setq preview-point-show-in 'buframe ;; or 'after-string for an inline preview intead.
+      preview-point-progress-indicators 'faces)
 
 ;; Enable automatic preview update on change.
 (add-hook 'LaTeX-mode-hook
