@@ -39,11 +39,10 @@
 (defcustom preview-point-show-in 'after-string
   "Specifies where to show the preview.
 Can be `before-string', `after-string' or `buframe'. Can also be
-\\='(buframe FN-POS FRAME-PARAMETERS BUF-PARAMETERS) where FN-POS
-is a position function (default is
-`buframe-position-right-of-overlay') and FRAME-PARAMETERS is an
-alist of additional frame parameters, default is nil and
-BUF-PARAMETERS is an alist of buffer local variables and their
+\\='(buframe FN-POS FRAME-PARAMETERS BUF-PARAMETERS) where FN-POS is a
+position function (default is `buframe-position-right-of-overlay') and
+FRAME-PARAMETERS is an alist of additional frame parameters, default is
+nil and BUF-PARAMETERS is an alist of buffer local variables and their
 values."
   :type '(choice
           (const :tag "Before string" before-string)
@@ -185,10 +184,13 @@ Adapted from `preview-check-changes' to call
 
 (defun preview-point-toggle (ov &optional arg event show-construct)
   "Toggle visibility of preview overlay OV.
-ARG can be one of the following: t activate the preview, nil
-deactivate the preview, `toggle' toggles. If the preview is
-disabled, the disabled symbol is shown when activated. If EVENT
-is given, it indicates the window where the event occurred,
+ARG can be one of the following:
+ t        activate the preview,
+ nil      deactivate the preview,
+ `toggle' toggles.
+
+If the preview is disabled, the disabled symbol is shown when activated.
+If EVENT is given, it indicates the window where the event occurred,
 either by being a mouse event or by directly being the window in
 question. This may be used for cursor restoration purposes.
 SHOW-CONSTRUCT forces showing under-construction previews."
@@ -284,7 +286,7 @@ Toggle previews as point enters or leaves overlays."
     (let* ((pt (point))
            (lst (overlays-at pt)))
       ;; Hide any open overlays
-      (when-let (ov preview-point--frame-overlay)
+      (when-let* (ov preview-point--frame-overlay)
         (and (overlay-buffer ov)
              (overlay-get ov 'preview-state)
              (not (eq (overlay-get ov 'preview-state) 'inactive))
@@ -378,7 +380,7 @@ ORIG-FUN is the original function.  ARGS are its arguments."
   (interactive (list (current-buffer)))
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (if-let ((cur-process
+      (if-let* ((cur-process
                 (or (get-buffer-process (TeX-process-buffer-name
                                          (TeX-region-file)))
                     (get-buffer-process (TeX-process-buffer-name
@@ -417,7 +419,7 @@ ORIG-FUN is the original function.  ARGS are its arguments."
                            #'preview-point@around@write-region)))))))
 
 (defun preview-point-buf-change (&rest _)
-  "Run preview at point when buffer changes."
+  "Run preview at point if there is a preview overlay."
   (when (or (cl-find-if
              (lambda (ov) (overlay-get ov 'preview-state))
              (overlays-at (point)))

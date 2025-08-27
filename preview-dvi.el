@@ -54,7 +54,8 @@
 
 (defvar preview-dvi-after-place-hook nil
   "Hook run after preview overlays are placed.
-Each function is called with one argument: the list of overlays processed.")
+Each function is called with one argument: the list of overlays
+processed.")
 
 (defvar preview-dvi-config-default
   '((image-type png)
@@ -66,7 +67,7 @@ Values are overridden by entries in `preview-image-creators'.")
 
 ;;; DVI generic functions
 (defun preview-dvi-process-setup ()
-  "Set up dvi* process for conversion.'"
+  "Set up dvi* process for conversion."
   (setq preview-gs-command-line (append
                                  preview-gs-command-line
                                  (list (preview-gs-resolution
@@ -90,7 +91,7 @@ Values are overridden by entries in `preview-image-creators'.")
             type))))
 
 (defun preview-dvi-start ()
-  "Start a Dvi conversion process process.
+  "Start a dvi conversion process process.
 See the original `preview-start-dvipng'."
   (let* ((name (preview-dvi-config 'process-name))
          (dir-command (funcall (preview-dvi-config 'command)))
@@ -123,7 +124,7 @@ See the original `preview-start-dvipng'."
   "Place all images dvipng has created, if any.
 Deletes the dvi file when finished.
 
-See the original `preview-dvipng-place-all'"
+See the original `preview-dvipng-place-all'."
   (let ((type (preview-dvi-config 'image-type))
         filename queued oldfiles snippet processed)
     (dolist (ov (prog1 preview-gs-queue (setq preview-gs-queue nil)))
@@ -203,7 +204,7 @@ See the original `preview-dvipng-abort'"
 The usual PROCESS and COMMAND arguments for
 `TeX-sentinel-function' apply.  Places all snippets if PLACEALL
 is set.
-See the original `preview-dvipng-sentinel'"
+See the original `preview-dvipng-sentinel'."
   (condition-case err
       (let ((status (process-status process)))
         (cond ((or (eq status 'signal)
@@ -223,7 +224,7 @@ See the original `preview-dvipng-sentinel'"
 
 (defun preview-dvi-close (process closedata)
   "Clean up after PROCESS and set up queue accumulated in CLOSEDATA.
-See the original `preview-dvipng-abort'"
+See the original `preview-dvipng-abort'."
   (setq preview-gs-queue (nconc preview-gs-queue closedata))
   (if process
       (if preview-gs-queue
@@ -282,7 +283,7 @@ deletions. Return list of overlays placed."
       ;; have the filename of our preview image in their 'filename property to
       ;; avoid eager file deletion
       (when preview-leave-open-previews-visible
-        (when-let (filename (cadr (overlay-get ov 'preview-image)))
+        (when-let* ((filename (cadr (overlay-get ov 'preview-image))))
         (let ((start (or (overlay-start ov) (point-min)))
               (end (or (overlay-end ov) (point-max)))
               (exception ov)
@@ -291,19 +292,20 @@ deletions. Return list of overlays placed."
             (when (and (not (eq oov exception))
                        (overlay-get oov 'preview-state)
                        (not (and timestamp
-                                 (equal timestamp (overlay-get oov
-                                                               'timestamp)))))
+                                   (equal timestamp
+                                          (overlay-get oov 'timestamp)))))
               ;; The overlay is gonna be deleted with its files.
               ;; Make sure its `filenames' does not contain our image
               (let ((files-oov (overlay-get oov 'filenames))
                     (files-ov  (overlay-get ov  'filenames)))
-                (when-let ((entry (assoc filename files-oov)))
+                  (when-let* ((entry (assoc filename files-oov)))
                   (overlay-put oov 'filenames
                                (assq-delete-all filename files-oov))
                   ;; Add the filename to the current overlay instead
                   ;; if it's not already there
                   (unless (assoc filename files-ov)
-                      (overlay-put ov 'filenames (cons entry files-ov)))))))))))
+                      (overlay-put ov 'filenames
+                                   (cons entry files-ov)))))))))))
     ovl))
 
 ;;; DVIPNG
@@ -336,8 +338,8 @@ but then you'll need to adapt `preview-dvi-config'."
 
 (defun preview-dvisvgm-command ()
   "Return a shell command for running dvisvgm.
-Result is a cons cell (COMMAND . TEMPDIR). Includes scaling based
-on preview magnification and text-scale settings."
+Result is a cons cell (COMMAND . TEMPDIR).  Includes scaling based on
+preview magnification and text-scale settings."
   (let* (;; (file preview-gs-file)
          (scale (* (/ (preview-hook-enquiry preview-scale)
                       (preview-get-magnification))
@@ -353,7 +355,7 @@ on preview magnification and text-scale settings."
 ;;; Updates to variables.
 (defun preview-dvi-variable-standard-value (symbol)
   "Return the standard value of variable SYMBOL.
-  This looks up SYMBOL's `standard-value' property and evaluates it."
+This looks up SYMBOL's `standard-value' property and evaluates it."
   (let ((container (get symbol 'standard-value)))
     (cl-assert (consp container) "%s does not have a standard value")
     (eval (car container))))
@@ -361,7 +363,7 @@ on preview magnification and text-scale settings."
 (defun preview-dvi-set-variable-standard-value (symbol value)
   "Set standard value of SYMBOL to VALUE.
 If SYMBOL currently holds its standard value, also set it to VALUE.
-Update SYMBOL's `standard-value' property accordingly"
+Update SYMBOL's `standard-value' property accordingly."
   (let ((standard (preview-dvi-variable-standard-value symbol)))
     (when (equal (symbol-value symbol) standard)
       (set symbol value))

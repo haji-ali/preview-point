@@ -132,7 +132,9 @@
                 (max 0 (min y-top (- ymax (or pframe-height 0))))))))))
 
 (defun buframe--make-buffer (name &optional locals)
-  "Return a buffer with NAME configured for preview frames."
+  "Return a buffer with NAME configured for preview frames.
+LOCALS are local variables which are set in the buffer after
+creation in addition to `buframe--default-buf-parameters'."
   (let ((fr face-remapping-alist)
         (ls line-spacing)
         (buffer (get-buffer-create name)))
@@ -158,7 +160,7 @@ If NOERROR is nil and no frame is found, signal an error."
             frame-or-name)
      (cl-find-if
       (lambda (frame)
-        (when-let ((buffer-info (frame-parameter frame 'buframe)))
+        (when-let* ((buffer-info (frame-parameter frame 'buframe)))
           (and
            (or (null frame-or-name)
                (equal (frame-parameter frame 'name) frame-or-name))
@@ -182,9 +184,8 @@ If NOERROR is nil and no frame is found, signal an error."
 
 By default, the frame is configured to be minimal, dedicated,
 non-focusable, and properly sized to its buffer. Positioning is
-delegated to FN-POS. If an existing child frame matching
-FRAME-OR-NAME and BUFFER exists, it is reused; otherwise, a new
-one is created.
+delegated to FN-POS.  If an existing child frame matching FRAME-OR-NAME
+and BUFFER exists, it is reused; otherwise, a new one is created.
 
 FRAME-OR-NAME is either the frame to reuse or its name.
 FN-POS is a function called with the frame and overlay/position,
@@ -278,7 +279,7 @@ Also ensure frame is made visible."
                (frame-live-p frame)
                (not (buframe-disabled-p frame)))
       (with-current-buffer (plist-get info :parent-buffer)
-        (if-let (pos (funcall fn-pos frame))
+        (if-let* ((pos (funcall fn-pos frame)))
             (pcase-let ((`(,px . ,py) (frame-position frame))
                         (`(,x . ,y) pos))
               (unless (and (= x px) (= y py))
@@ -297,7 +298,7 @@ Also ensure frame is made visible."
 (defun buframe-disable (frame-or-name &optional enable)
   "Disable and hide FRAME-OR-NAME.
 If ENABLE is non-nil, re-enable and show it."
-  (when-let (frm (buframe--find frame-or-name))
+  (when-let* ((frm (buframe--find frame-or-name)))
     (when (frame-live-p frm)
       (set-frame-parameter
        frm 'buframe
@@ -311,7 +312,7 @@ If ENABLE is non-nil, re-enable and show it."
 
 (defun buframe-hide (frame-or-name)
   "Make FRAME-OR-NAME invisible."
-  (when-let (frm (buframe--find frame-or-name))
+  (when-let* ((frm (buframe--find frame-or-name)))
     (when (and (frame-live-p frm)
                (frame-visible-p frm))
       (make-frame-invisible frm)))
@@ -383,7 +384,7 @@ BUFFER can be:
   \\='not-parent  – run only if parent buffer is not current
   a buffer     – run only if BUFFER is current."
   (if frame-or-name
-      (when-let (frame (buframe--find frame-or-name))
+      (when-let* ((frame (buframe--find frame-or-name)))
         (let ((is-parent (equal (window-buffer)
                                 (plist-get (frame-parameter frame 'buframe)
                                            :parent-buffer))))
@@ -394,7 +395,7 @@ BUFFER can be:
             (funcall fn frame))))
     (cl-mapc
      (lambda (frame)
-       (when-let ((buffer-info (frame-parameter frame 'buframe)))
+       (when-let* ((buffer-info (frame-parameter frame 'buframe)))
          (buframe--auto* frame fn buffer)))
      (frame-list))))
 
