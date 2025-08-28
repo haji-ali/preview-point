@@ -133,7 +133,6 @@
                (top-xy (posn-x-y (or posn-start posn posn-end)))
                (bottom-xy (posn-x-y (or posn-end posn posn-start)))
                (font-height (default-font-height))
-               (y-mid (/ (+ (cdr top-xy) (cdr bottom-xy) font-height) 2))
                (y-top (+ (cadr (window-pixel-edges window))
                          (or (frame-parameter frame 'tab-line-height) 0)
                          (or (frame-parameter frame 'header-line-height) 0)
