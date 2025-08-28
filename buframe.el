@@ -1,7 +1,11 @@
 ;;; buframe.el --- Local previews  -*- lexical-binding:t -*-
+
+
+;; Author: Al Haji-Ali <abdo.haji.ali@gmail.com>
 ;; Version: 0.1
-;; URL: https://github.com/hajiali/buframe
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "27.1") (auctex "13.2"))
+;; Keywords: tex, preview, convenience
+;; URL: https://github.com/hajiali/preview-point
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -124,9 +128,9 @@
            (posn
             (pcase location
               ('middle (posn-at-point
-             (with-current-buffer (overlay-buffer ov)
+                        (with-current-buffer (overlay-buffer ov)
                           (buframe--right-visible start end))
-             window))
+                        window))
               ('top posn-start)
               ('bottom posn-end))))
       (when (or posn posn-start posn-end)
@@ -136,7 +140,7 @@
                (xmax (frame-pixel-width parent-frame))
                (ymax (frame-pixel-height parent-frame))
                (x (+ (car (window-inside-pixel-edges window))
-                     (if (eq location 'middel)
+                     (if (eq location 'middle)
                          (default-font-width)
                        0) ;; Add another character for the cursor
                      (- (or (car (posn-x-y (or posn posn-end posn-start))) 0)
@@ -151,7 +155,7 @@
                          (or (frame-parameter frame 'header-line-height) 0)
                          (pcase location
                            ('middle (+
-                         (- (/ pframe-height 2))
+                                     (- (/ pframe-height 2))
                                      (/ (+ (cdr top-xy) (cdr bottom-xy)
                                            font-height)
                                         2)))
@@ -194,10 +198,10 @@ If NOERROR is nil and no frame is found, signal an error."
            (or (null frame-or-name)
                (equal (frame-parameter frame 'name) frame-or-name))
            (or (null parent)
-               (equal (frame-parent frame) parent))
+               (eq (frame-parent frame) parent))
            (or (null buffer)
                (equal (buffer-name buffer) (plist-get buffer-info :buf-name))
-               (equal buffer (plist-get buffer-info :buf))))))
+               (eq buffer (plist-get buffer-info :buf))))))
       (frame-list)))
    (unless noerror
      (error "Frame not found"))))
@@ -212,7 +216,7 @@ If NOERROR is nil and no frame is found, signal an error."
   "Create or reuse a child FRAME displaying BUFFER, positioned using FN-POS.
 
 By default, the frame is configured to be minimal, dedicated,
-non-focusable, and properly sized to its buffer. Positioning is
+non-focusable, and properly sized to its buffer.  Positioning is
 delegated to FN-POS.  If an existing child frame matching FRAME-OR-NAME
 and BUFFER exists, it is reused; otherwise, a new one is created.
 
@@ -385,7 +389,7 @@ compared to when the function is called."
                            ,@(cdr parsed))))
                (setq ,timer-var
                      (apply
-                      'run-with-idle-timer
+                      #'run-with-idle-timer
                       ,delay nil
                       def
                       args)))
@@ -399,8 +403,8 @@ compared to when the function is called."
 
 (buframe--defun-debounced
   buframe-autoupdate ( ;
-                        &optional frame-or-name
-                        &delay buframe-update-debounce-delay)
+                      &optional frame-or-name
+                      &delay buframe-update-debounce-delay)
   "Update FRAME-OR-NAME if its parent buffer is currently selected."
   (buframe--auto* frame-or-name 'buframe-update 'parent))
 
@@ -414,12 +418,12 @@ BUFFER can be:
   a buffer     – run only if BUFFER is current."
   (if frame-or-name
       (when-let* ((frame (buframe--find frame-or-name)))
-        (let ((is-parent (equal (window-buffer)
-                                (plist-get (frame-parameter frame 'buframe)
-                                           :parent-buffer))))
+        (let ((is-parent (eq (window-buffer)
+                             (plist-get (frame-parameter frame 'buframe)
+                                        :parent-buffer))))
           (when (or (and (eq buffer 'parent) is-parent)
                     (and (eq buffer 'not-parent) (not is-parent))
-                    (equal (window-buffer) buffer))
+                    (eq (window-buffer) buffer))
             ;; If buffer is not selected, we should hide the frame
             (funcall fn frame))))
     (cl-mapc

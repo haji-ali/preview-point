@@ -1,11 +1,10 @@
 ;;; preview-point.el --- Local previews around point for AUCTeX preview -*- lexical-binding:t -*-
 
 ;; Author: Al Haji-Ali <abdo.haji.ali@gmail.com>
-;; Version: 0.1
-;; Package-Requires: ((emacs "27.1") (auctex "13.2"))
-;; Keywords: tex, preview, convenience
+;; Keywords: tex, tools
+;; Version: 0.0.1
 ;; URL: https://github.com/hajiali/preview-point
-
+;; Package-Requires: ((emacs "27.1") (auctex "13.0.12"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -52,7 +51,7 @@
 
 (defcustom preview-point-show-in 'after-string
   "Specifies where to show the preview.
-Can be `before-string', `after-string' or `buframe'. Can also be
+Can be `before-string', `after-string' or `buframe'.  Can also be
 \\='(buframe FN-POS FRAME-PARAMETERS BUF-PARAMETERS) where FN-POS is a
 position function (default is `buframe-position-right-of-overlay') and
 FRAME-PARAMETERS is an alist of additional frame parameters, default is
@@ -67,7 +66,7 @@ values."
                 (alist :tag "Frame parameters")
                 (alist :tag "Buffer parameters"))))
 
-(defcustom preview-point-auto-p 'texmathp
+(defcustom preview-point-auto-p #'texmathp
   "Function to test if a point should be previewed automatically.
 This is called with no arguments at (point) when there is not a
 preview already."
@@ -122,32 +121,32 @@ If PT is nil, use the current point in OV's buffer."
                               'keymap nil
                               'mouse-face nil))
           (goto-char 0))))
-    (funcall 'buframe-make
-             "preview-point"
-             (lambda (frame)
-               (when preview-point--frame-overlay
-                 (funcall
-                  (or (car-safe (cdr-safe preview-point-show-in))
-                      'buframe-position-right-of-overlay)
-                  frame preview-point--frame-overlay)))
-             buf
-             (overlay-buffer ov)
-             (window-frame)
-             (car-safe (cdr (cdr-safe preview-point-show-in))))))
+    (buframe-make
+     "preview-point"
+     (lambda (frame)
+       (when preview-point--frame-overlay
+         (funcall
+          (or (car-safe (cdr-safe preview-point-show-in))
+              #'buframe-position-right-of-overlay)
+          frame preview-point--frame-overlay)))
+     buf
+     (overlay-buffer ov)
+     (window-frame)
+     (car-safe (cdr (cdr-safe preview-point-show-in))))))
 
 (defun preview-point-inside-overlay-p (ov &optional pt)
   "Return PT if inside overlay OV, nil otherwise.
 If PT is nil, use point of OV's buffer."
-  (let ((pt (or pt
-                (and
-                 (overlay-buffer ov)
-                 (with-current-buffer (overlay-buffer ov)
-                   (point))))))
-    (and
-     (equal (overlay-buffer ov) (window-buffer))
-     (>= pt (overlay-start ov))
-     (< pt (overlay-end ov))
-     pt)))
+  (or pt
+      (setq pt (and
+                (overlay-buffer ov)
+                (with-current-buffer (overlay-buffer ov)
+                  (point)))))
+  (and
+   (eq (overlay-buffer ov) (window-buffer))
+   (>= pt (overlay-start ov))
+   (< pt (overlay-end ov))
+   pt))
 
 (defun preview-point-p ()
   "Return non-nil if current preview type is a point-preview."
@@ -206,7 +205,7 @@ ARG can be one of the following:
 If the preview is disabled, the disabled symbol is shown when activated.
 If EVENT is given, it indicates the window where the event occurred,
 either by being a mouse event or by directly being the window in
-question. This may be used for cursor restoration purposes.
+question.  This may be used for cursor restoration purposes.
 SHOW-CONSTRUCT forces showing under-construction previews."
   (let* ((old-urgent (preview-remove-urgentization ov))
          (pt (and
@@ -256,24 +255,17 @@ SHOW-CONSTRUCT forces showing under-construction previews."
                                 show-construct))
           (progn
             (overlay-put ov 'category 'preview-overlay)
-            ;; (unless (or (null preview-point--frame-overlay)
-            ;;             (equal preview-point--frame-overlay ov))
-            ;;   (message "SHOWING OVERALY %S BEFORE HIDING %S"
-            ;;            ov preview-point--frame-overlay))
             (setq preview-point--frame-overlay ov)
             (if frame-p
                 (setq
                  preview-point--frame
                  (preview-point-popup-frame ov str))
               (overlay-put ov preview-point-show-in str)))
-        (when (equal preview-point--frame-overlay ov)
-          ;; (unless (equal preview-point--frame-overlay ov)
-          ;;   (message "HIDING %S WHILE %S SHOWN"
-          ;;            ov preview-point--frame-overlay))
+        (when (eq preview-point--frame-overlay ov)
           (if frame-p
               (when (and preview-point--frame
                          ;; Only hide the frame if this is the shown overlay.
-                         (equal preview-point--frame-overlay ov))
+                         (eq preview-point--frame-overlay ov))
                 (buframe-disable preview-point--frame))
             (overlay-put ov preview-point-show-in nil))
           (setq preview-point--frame-overlay nil))))
@@ -313,7 +305,7 @@ Toggle previews as point enters or leaves overlays."
         (let ((state (overlay-get ovr 'preview-state)))
           (when ;; (eq (overlay-get ovr 'preview-state) 'inactive)
               (and (and state (not (eq state 'active)))
-                   (not (equal ovr preview-point--frame-overlay)))
+                   (not (eq ovr preview-point--frame-overlay)))
             (preview-point-toggle ovr t)))))
 
     (when (and (not (preview-point-has-preview-p))
@@ -346,14 +338,14 @@ overlays in CLOSEDATA after."
   (remove-hook 'post-command-hook #'preview-move-point t)
   (add-hook 'pre-command-hook #'preview-point-mark-point nil t)
   (add-hook 'post-command-hook #'preview-point-move-point nil t)
-  (add-hook 'preview-dvi-after-place-hook 'preview-point-after-place))
+  (add-hook 'preview-dvi-after-place-hook #'preview-point-after-place))
 
 (defun preview-point@around@preview-toggle (old-fn &rest args)
   "Advice around `preview-toggle' to conditionally use `preview-point-toggle'.
 OLD-FN is the `preview-toggle' and ARGS are all of its arguments."
   (if (with-current-buffer TeX-command-buffer
         (preview-point-p))
-      (apply 'preview-point-toggle args)
+      (apply #'preview-point-toggle args)
     (apply old-fn args)))
 
 (defun preview-point-after-place (ovl)
@@ -385,7 +377,7 @@ OLD-FN is the `preview-toggle' and ARGS are all of its arguments."
   :type 'number)
 
 (defun preview-point@around@write-region (orig-fun &rest args)
-   "Advice around `write-region' to suppress messages.
+  "Advice around `write-region' to suppress messages.
 ORIG-FUN is the original function.  ARGS are its arguments."
   (let ((noninteractive t)
         (inhibit-message t)
@@ -399,10 +391,10 @@ ORIG-FUN is the original function.  ARGS are its arguments."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (if-let* ((cur-process
-                (or (get-buffer-process (TeX-process-buffer-name
-                                         (TeX-region-file)))
-                    (get-buffer-process (TeX-process-buffer-name
-                                         (TeX-master-file))))))
+                 (or (get-buffer-process (TeX-process-buffer-name
+                                          (TeX-region-file)))
+                     (get-buffer-process (TeX-process-buffer-name
+                                          (TeX-master-file))))))
           (let ((preview-point-auto-delay
                  (if (> preview-point-auto-delay 0)
                      preview-point-auto-delay
@@ -426,14 +418,11 @@ ORIG-FUN is the original function.  ARGS are its arguments."
               ;; If we are working in a file buffer that is not a tex file,
               ;; then we want preview-region to operate in "non-file" mode,
               ;; where it passes "<none>" to TeX-region-create.
-              (progn ;; (message "Running previewing at %S for %S" (point)
-                ;;          (buffer-substring-no-properties (preview-next-border t)
-                ;;                                          (preview-next-border nil)))
-                (save-excursion
-                  (goto-char pt)
-                  ;; (preview-at-point)
-                  (preview-region (preview-next-border t)
-                                  (preview-next-border nil))))
+              (save-excursion
+                (goto-char pt)
+                ;; (preview-at-point)
+                (preview-region (preview-next-border t)
+                                (preview-next-border nil)))
             (advice-remove 'write-region
                            #'preview-point@around@write-region)))))))
 
@@ -449,28 +438,24 @@ ORIG-FUN is the original function.  ARGS are its arguments."
             (funcall preview-point-auto-p))
     (preview-point--preview-at-point (point) (current-buffer))))
 
-(cl-pushnew '(point-dvisvgm
-              (open preview-gs-open preview-dvi-process-setup)
-	      (place preview-point-place preview-dvi-place)
-	      (close preview-point-close preview-dvi-close)
-              (args ((image-type svg)
-                     (process-name "Preview-DviSVGM")
-                     (command preview-dvisvgm-command)
-                     (ascent (lambda (&rest _) 'center)))))
-	    preview-image-creators
-	    :test #'equal)
-
-
-(cl-pushnew '(point-dvipng
-              (open preview-gs-open preview-dvi-process-setup)
-	      (place preview-point-place preview-dvi-place)
-	      (close preview-point-close preview-dvi-close)
-              (args ((image-type png)
-                     (process-name "Preview-DviPNG")
-                     (command preview-dvipng-command)
-                     (ascent (lambda (&rest _) 'center)))))
-	    preview-image-creators
-	    :test #'equal)
+(cl-loop for (id type name command)
+         in '((point-dvisvgm svg "Preview-DviSVGM" preview-dvisvgm-command)
+              (point-dvipng png "Preview-DviPNG" preview-dvipng-command))
+         do
+         (cl-pushnew `(,id
+                       (open preview-gs-open preview-dvi-process-setup)
+                       (place preview-point-place preview-dvi-place)
+                       (close preview-point-close preview-dvi-close)
+                       (args ((image-type ,type)
+                              (process-name ,name)
+                              (command ,command)
+                              (ascent (lambda (&rest _) 'center)))))
+                     preview-image-creators
+                     :test #'equal)
+         (cl-pushnew `(,id png "-sDEVICE=png16m")
+                     (preview-dvi-variable-standard-value
+                      'preview-gs-image-type-alist)
+                     :test #'equal))
 
 (provide 'preview-point)
 ;;; preview-point.el ends here

@@ -1,8 +1,6 @@
 ;;; preview-dvi.el --- Output processor for LaTeX preview  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2024
-
-;; Author: Abdul-Lateef Haji-Ali <abdo.haji.ali@gmail.com>
+;; Author: Al Haji-Ali <abdo.haji.ali@gmail.com>
 ;; Keywords: tex, tools
 ;; Version: 0.0.1
 ;; URL: https://github.com/hajiali/preview-point
@@ -85,7 +83,7 @@ Values are overridden by entries in `preview-image-creators'.")
       ;; NOTE: `TeX-sentinel-function' was being set to something temporary
       ;; rather than being set correctly before `preview-dvi-start' is
       ;; called. Here I set it before calling the function.
-      (setq TeX-sentinel-function 'preview-dvi-sentinel)
+      (setq TeX-sentinel-function #'preview-dvi-sentinel)
       (list (preview-dvi-start)
             (current-buffer) TeX-active-tempdir t
             type))))
@@ -120,7 +118,7 @@ See the original `preview-start-dvipng'."
                     TeX-shell-command-option
                     command))))
 
-(defun preview-dvi-place-all ()
+(defun preview-dvi-place-all (&optional stop)
   "Place all images dvipng has created, if any.
 Deletes the dvi file when finished.
 
@@ -156,7 +154,8 @@ See the original `preview-dvipng-place-all'."
           ;; to avoid orphaning files.
           ;; (overlay-put ov 'filenames nil)
           (push ov preview-gs-queue))))
-    (if (setq preview-gs-queue (nreverse preview-gs-queue))
+    (if (and (setq preview-gs-queue (nreverse preview-gs-queue))
+             (not stop))
         (progn
           (setq TeX-sentinel-function (lambda (process command)
                                         (preview-dvi-sentinel
@@ -171,16 +170,17 @@ See the original `preview-dvipng-place-all'."
                           (preview-make-filename
                            (or preview-ps-file
                                (format "preview.%03d" snippet))
-                           TeX-active-tempdir))))
-          (while (setq filename (pop oldfiles))
-            (condition-case nil
-                (preview-delete-file filename)
-              (file-error nil))))
+                           TeX-active-tempdir)))))
       (condition-case nil
           (let ((gsfile preview-gs-file))
             (delete-file
              (with-current-buffer TeX-command-buffer
                (funcall (car gsfile) "dvi" t))))
+        (file-error nil)))
+
+    (while (setq filename (pop oldfiles))
+      (condition-case nil
+          (preview-delete-file filename)
         (file-error nil)))
     ;; NOTE: Call a custom hook to process overlays after they have been
     ;; replaced with an active icon.
@@ -196,7 +196,7 @@ See the original `preview-dvipng-abort'"
     ;; in this case an empty folder is left behind. This makes sure that this
     ;; folder is deleted.
     (when TeX-active-tempdir
-      (unless (> (nth 2 TeX-active-tempdir) 1)
+      (unless (>= (nth 2 TeX-active-tempdir) 1)
         (delete-directory (nth 0 TeX-active-tempdir))))))
 
 (defun preview-dvi-sentinel (process command &optional placeall)
@@ -206,19 +206,21 @@ The usual PROCESS and COMMAND arguments for
 is set.
 See the original `preview-dvipng-sentinel'."
   (condition-case err
-      (let ((status (process-status process)))
-        (cond ((or (eq status 'signal)
-                   (save-excursion
-                     (goto-char (point-max))
-                     (search-backward (format "%s exited abnormally"
-                                              command)
-                                      nil t)))
+      (let ((status (process-status process))
+            (failed (save-excursion
+                      (goto-char (point-max))
+                      (search-backward (format "%s exited abnormally"
+                                               command)
+                                       nil t))))
+        (cond ((eq status 'signal)
                (delete-process process)
                (preview-dvi-abort))
               ((eq status 'exit)
                (delete-process process)
                (setq TeX-sentinel-function nil)
-               (when placeall (preview-dvi-place-all)))))
+               (when placeall (preview-dvi-place-all failed))
+               (when failed ;; Abort remaining previews
+                 (preview-dvi-abort)))))
     (error (preview-log-error err "DVI sentinel" process)))
   (preview-reraise-error process))
 
@@ -274,36 +276,36 @@ deletions. Return list of overlays placed."
   ;; checking it first, so we remove files in listed in `filenames' here.
   (preview-dvi-delete-overlay-files ov)
 
-  (let ((ovl (apply 'preview-gs-place ov args)))
-    (dolist (ov ovl)
-      ;; NOTE: Inside `preview-place-preview', after `place' is called,
-      ;; `preview-clearout' will be called to delete overlays in within the
-      ;; same overlay and which have a timestamp that is different from the
-      ;; one in the overlay. We need to make sure that these overlays do not
-      ;; have the filename of our preview image in their 'filename property to
-      ;; avoid eager file deletion
-      (when preview-leave-open-previews-visible
+  (let ((ovl (apply #'preview-gs-place ov args)))
+    (when preview-leave-open-previews-visible
+      (dolist (ov ovl)
+        ;; NOTE: Inside `preview-place-preview', after `place' is called,
+        ;; `preview-clearout' will be called to delete overlays in within the
+        ;; same overlay and which have a timestamp that is different from the
+        ;; one in the overlay. We need to make sure that these overlays do not
+        ;; have the filename of our preview image in their 'filename property to
+        ;; avoid eager file deletion
         (when-let* ((filename (cadr (overlay-get ov 'preview-image))))
-        (let ((start (or (overlay-start ov) (point-min)))
-              (end (or (overlay-end ov) (point-max)))
-              (exception ov)
+          (let ((start (or (overlay-start ov) (point-min)))
+                (end (or (overlay-end ov) (point-max)))
+                (exception ov)
                 (timestamp (overlay-get ov 'timestamp)))
-          (dolist (oov (overlays-in start end)) ;; Old overlays
-            (when (and (not (eq oov exception))
-                       (overlay-get oov 'preview-state)
-                       (not (and timestamp
+            (dolist (oov (overlays-in start end)) ;; Old overlays
+              (when (and (not (eq oov exception))
+                         (overlay-get oov 'preview-state)
+                         (not (and timestamp
                                    (equal timestamp
                                           (overlay-get oov 'timestamp)))))
-              ;; The overlay is gonna be deleted with its files.
-              ;; Make sure its `filenames' does not contain our image
-              (let ((files-oov (overlay-get oov 'filenames))
-                    (files-ov  (overlay-get ov  'filenames)))
+                ;; The overlay is gonna be deleted with its files.
+                ;; Make sure its `filenames' does not contain our image
+                (let ((files-oov (overlay-get oov 'filenames))
+                      (files-ov  (overlay-get ov  'filenames)))
                   (when-let* ((entry (assoc filename files-oov)))
-                  (overlay-put oov 'filenames
-                               (assq-delete-all filename files-oov))
-                  ;; Add the filename to the current overlay instead
-                  ;; if it's not already there
-                  (unless (assoc filename files-ov)
+                    (overlay-put oov 'filenames
+                                 (assq-delete-all filename files-oov))
+                    ;; Add the filename to the current overlay instead
+                    ;; if it's not already there
+                    (unless (assoc filename files-ov)
                       (overlay-put ov 'filenames
                                    (cons entry files-ov)))))))))))
     ovl))
@@ -343,10 +345,10 @@ preview magnification and text-scale settings."
   (let* (;; (file preview-gs-file)
          (scale (* (/ (preview-hook-enquiry preview-scale)
                       (preview-get-magnification))
-		   (with-current-buffer TeX-command-buffer
-		     (if text-scale-mode
-		         (expt text-scale-mode-step text-scale-mode-amount)
-		       1.0)))))
+                   (with-current-buffer TeX-command-buffer
+                     (if text-scale-mode
+                         (expt text-scale-mode-step text-scale-mode-amount)
+                       1.0)))))
     (with-current-buffer TeX-command-buffer
       (let ((cmd (concat (TeX-command-expand preview-dvisvgm-command)
                          (format " --scale=%g " scale))))
@@ -390,12 +392,12 @@ Update SYMBOL's `standard-value' property accordingly."
                                  (command preview-dvisvgm-command)))
          do
          (cl-pushnew `(,type (open preview-gs-open preview-dvi-process-setup)
-		             (place preview-dvi-place)
-		             (close preview-dvi-close)
+                             (place preview-dvi-place)
+                             (close preview-dvi-close)
                              (args ,args))
-	             (preview-dvi-variable-standard-value
+                     (preview-dvi-variable-standard-value
                       'preview-image-creators)
-	             :test #'equal))
+                     :test #'equal))
 
 ;; Update preview-image-type customization list
 (put 'preview-image-type 'custom-type
@@ -405,8 +407,8 @@ Update SYMBOL's `standard-value' property accordingly."
              '((symbol :tag "Other"))))
 
 (cl-pushnew '(dvisvgm png "-sDEVICE=png16m")
-	    (preview-dvi-variable-standard-value 'preview-gs-image-type-alist)
-	    :test #'equal)
+            (preview-dvi-variable-standard-value 'preview-gs-image-type-alist)
+            :test #'equal)
 
 (provide 'preview-dvi)
 ;;; preview-dvi.el ends here
