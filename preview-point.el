@@ -300,7 +300,11 @@ Toggle previews as point enters or leaves overlays."
           (when ;; (eq (overlay-get ovr 'preview-state) 'inactive)
               (and (and state (not (eq state 'active)))
                    (not (equal ovr preview-point--frame-overlay)))
-            (preview-point-toggle ovr t)))))))
+            (preview-point-toggle ovr t)))))
+
+    (when (and (not (preview-point-has-preview-p))
+               (funcall preview-point-auto-p))
+      (preview-point--preview-at-point (point) (current-buffer)))))
 
 (defun preview-point-place (place-fn ov &rest args)
   "Place preview function for `preview-point'.
@@ -418,11 +422,15 @@ ORIG-FUN is the original function.  ARGS are its arguments."
             (advice-remove 'write-region
                            #'preview-point@around@write-region)))))))
 
+(defun preview-point-has-preview-p (&optional pt)
+  "Return non-nil if PT has a preview overlay."
+  (cl-find-if
+   (lambda (ov) (overlay-get ov 'preview-state))
+   (overlays-at (or pt (point)))))
+
 (defun preview-point-buf-change (&rest _)
   "Run preview at point if there is a preview overlay."
-  (when (or (cl-find-if
-             (lambda (ov) (overlay-get ov 'preview-state))
-             (overlays-at (point)))
+  (when (or (preview-point-has-preview-p)
             (funcall preview-point-auto-p))
     (preview-point--preview-at-point (point) (current-buffer))))
 
