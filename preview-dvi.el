@@ -88,12 +88,14 @@ Values are overridden by entries in `preview-image-creators'.")
             (current-buffer) TeX-active-tempdir t
             type))))
 
-(defun preview-dvi-start ()
+(defun preview-dvi-start (&optional name dir-command)
   "Start a dvi conversion process process.
 See the original `preview-start-dvipng'."
-  (let* ((name (preview-dvi-config 'process-name))
-         (dir-command (funcall (preview-dvi-config 'command)))
-         (command (car dir-command))
+  (or name (setq name (preview-dvi-config 'process-name)))
+  (or dir-command
+      (setq dir-command (funcall (preview-dvi-config 'command))))
+
+  (let* ((command (car dir-command))
          (tempdir (cdr dir-command)))
     (setq TeX-active-tempdir tempdir)
     (goto-char (point-max))
@@ -118,7 +120,7 @@ See the original `preview-start-dvipng'."
                     TeX-shell-command-option
                     command))))
 
-(defun preview-dvi-place-all (&optional stop)
+(defun preview-dvi-place-all ()
   "Place all images dvipng has created, if any.
 Deletes the dvi file when finished.
 
@@ -154,23 +156,40 @@ See the original `preview-dvipng-place-all'."
           ;; to avoid orphaning files.
           ;; (overlay-put ov 'filenames nil)
           (push ov preview-gs-queue))))
-    (if (and (setq preview-gs-queue (nreverse preview-gs-queue))
-             (not stop))
+    (if (setq preview-gs-queue (nreverse preview-gs-queue))
         (progn
+          ;; Fallback to DVIPS
           (setq TeX-sentinel-function (lambda (process command)
-                                        (preview-dvi-sentinel
+                                        (preview-dvi-gs-dvips-sentinel
                                          process
                                          command
                                          t)))
-          (preview-dvi-start)
+          (let* ((fast preview-fast-conversion)
+                 (command (preview-dvips-command preview-fast-conversion))
+                 (tempdir (cdr command)))
+            (setq preview-ps-file (and fast
+                                       (preview-make-filename
+                                        (preview-make-filename
+                                         "preview.ps" tempdir)
+                                        tempdir)))
+            (preview-dvi-start "DviPS" command))
           (dolist (ov preview-gs-queue)
             (setq snippet (aref (overlay-get ov 'queued) 2))
+            ;; NOTE: Only add `preview-ps-file' if it doesn't exists
+            ;; also remove files before overwriting 'filesnames.
+            (if preview-ps-file
+                (unless (memq preview-ps-file (overlay-get ov 'filenames))
+                  (preview-dvi-delete-overlay-files ov)
+                  (overlay-put ov 'filenames
+                               (list
+                                (preview-make-filename preview-ps-file
+                                                       TeX-active-tempdir))))
+              (preview-dvi-delete-overlay-files ov)
             (overlay-put ov 'filenames
                          (list
                           (preview-make-filename
-                           (or preview-ps-file
-                               (format "preview.%03d" snippet))
-                           TeX-active-tempdir)))))
+                             (format "preview.%03d" snippet)
+                             TeX-active-tempdir))))))
       (condition-case nil
           (let ((gsfile preview-gs-file))
             (delete-file
@@ -206,27 +225,25 @@ The usual PROCESS and COMMAND arguments for
 is set.
 See the original `preview-dvipng-sentinel'."
   (condition-case err
-      (let ((status (process-status process))
-            (failed (save-excursion
-                      (goto-char (point-max))
-                      (search-backward (format "%s exited abnormally"
-                                               command)
-                                       nil t))))
+      (let ((status (process-status process)))
         (cond ((eq status 'signal)
                (delete-process process)
                (preview-dvi-abort))
               ((eq status 'exit)
                (delete-process process)
                (setq TeX-sentinel-function nil)
-               (when placeall (preview-dvi-place-all failed))
-               (when failed ;; Abort remaining previews
-                 (preview-dvi-abort)))))
+               (when placeall (preview-dvi-place-all))
+               ;; (when failed ;; Abort remaining previews
+               ;;   (preview-dvi-abort))
+               )))
     (error (preview-log-error err "DVI sentinel" process)))
   (preview-reraise-error process))
 
 (defun preview-dvi-close (process closedata)
   "Clean up after PROCESS and set up queue accumulated in CLOSEDATA.
 See the original `preview-dvipng-abort'."
+  (if preview-parsed-pdfoutput
+      (preview-dvi-gs-close process closedata)
   (setq preview-gs-queue (nconc preview-gs-queue closedata))
   (if process
       (if preview-gs-queue
@@ -246,7 +263,7 @@ See the original `preview-dvipng-abort'."
         ;; pathological case: no previews although we sure thought so.
         (delete-process process)
         (unless (eq (process-status process) 'signal)
-          (preview-dvi-abort)))))
+            (preview-dvi-abort))))))
 
 (defun preview-dvi-config (key)
   "Return the value associated with KEY in the current preview config.
@@ -309,6 +326,17 @@ deletions. Return list of overlays placed."
                       (overlay-put ov 'filenames
                                    (cons entry files-ov)))))))))))
     ovl))
+
+
+;;; DVIPS
+(defun preview-dvips-command (&optional fast)
+  "Return a shell command for starting a DviPNG process.
+The result is a cons cell (COMMAND . TEMPDIR)."
+  (with-current-buffer TeX-command-buffer
+    (let ((cmd (concat (TeX-command-expand (if fast
+                                               preview-fast-dvips-command
+                                             preview-dvips-command)))))
+      (cons cmd TeX-active-tempdir))))
 
 ;;; DVIPNG
 (defun preview-dvipng-command ()
@@ -377,11 +405,6 @@ Update SYMBOL's `standard-value' property accordingly."
 (gv-define-simple-setter preview-dvi-variable-standard-value
                          preview-dvi-set-variable-standard-value)
 
-(setf (preview-dvi-variable-standard-value 'preview-image-creators)
-      (assq-delete-all
-       'dvipng
-       (preview-dvi-variable-standard-value 'preview-image-creators)))
-
 (cl-loop for (type . args) in '((dvipng
                                  (image-type png)
                                  (process-name "Preview-DviPNG")
@@ -391,6 +414,10 @@ Update SYMBOL's `standard-value' property accordingly."
                                  (process-name "Preview-DviSVGM")
                                  (command preview-dvisvgm-command)))
          do
+         (setf (preview-dvi-variable-standard-value 'preview-image-creators)
+               (assq-delete-all
+                type
+                (preview-dvi-variable-standard-value 'preview-image-creators)))
          (cl-pushnew `(,type (open preview-gs-open preview-dvi-process-setup)
                              (place preview-dvi-place)
                              (close preview-dvi-close)
@@ -409,6 +436,169 @@ Update SYMBOL's `standard-value' property accordingly."
 (cl-pushnew '(dvisvgm png "-sDEVICE=png16m")
             (preview-dvi-variable-standard-value 'preview-gs-image-type-alist)
             :test #'equal)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; DVIPS fixes
+;; Various function re-definitions to call a hook when an image is replaced by
+;; PS.
+;;
+;; The main difference is calling in `preview-dvi-gs-filter' and
+;; `preview-dvi-gs-sentinel' where we call the hook on the overlay being
+;; processed.
+;;
+;; All other function re-definitions is to set the filter/sentinel correctly.
+;;
+(defun preview-dvi-gs-dvips-sentinel (process _command &optional gsstart)
+  "Sentinel function for indirect rendering DviPS process.
+The usual PROCESS and COMMAND arguments for
+`TeX-sentinel-function' apply.  Starts gs if GSSTART is set."
+  (condition-case err
+      (let ((status (process-status process))
+            (gsfile preview-gs-file))
+        (cond ((eq status 'exit)
+               (delete-process process)
+               (setq TeX-sentinel-function nil)
+               (condition-case nil
+                   (delete-file
+                    (with-current-buffer TeX-command-buffer
+                      (funcall (car gsfile) "dvi" t)))
+                 (file-error nil))
+               (if preview-ps-file
+                   (preview-prepare-fast-conversion))
+               (when gsstart
+                 (if preview-gs-queue
+                     (preview-dvi-gs-restart)
+                   (when preview-ps-file
+                     (condition-case nil
+                         (message "DELETING PREVIEW %S" preview-ps-file)
+                         (preview-delete-file preview-ps-file)
+                       (file-error nil))))))
+              ((eq status 'signal)
+               (delete-process process)
+               (preview-dvips-abort))))
+    (error (preview-log-error err "DviPS sentinel" process)))
+  (preview-reraise-error process))
+
+(defun preview-dvi-gs-filter (process string)
+  "Filter function for processing Ghostscript output.
+Gets the usual PROCESS and STRING parameters, see
+`set-process-filter' for a description."
+  (with-current-buffer (process-buffer process)
+    (setq preview-gs-answer (concat preview-gs-answer string))
+    (while (string-match "GS\\(<[0-9]+\\)?>" preview-gs-answer)
+      (let* ((pos (match-end 0))
+             (answer (substring preview-gs-answer 0 pos)))
+        (setq preview-gs-answer (substring preview-gs-answer pos))
+        (condition-case err
+            (let* ((ov (car preview-gs-outstanding))
+                   (processed (and ov (overlay-buffer ov)
+                                   (overlay-get ov 'queued))))
+              (preview-gs-transact process answer)
+              ;; NOTE: Call hook to update state of overlay when
+              ;; its image was replaced.
+              (when processed
+                (run-hook-with-args
+                 'preview-dvi-after-place-hook
+                 (list ov))))
+          (error (preview-log-error err "Ghostscript filter" process))))))
+  (preview-reraise-error))
+
+(defun preview-dvi-gs-close (process closedata)
+  "Clean up after PROCESS and set up queue accumulated in CLOSEDATA."
+  (setq preview-gs-queue (nconc preview-gs-queue closedata))
+  (if process
+      (if preview-gs-queue
+          (if TeX-process-asynchronous
+              (if (and (eq (process-status process) 'exit)
+                       (null TeX-sentinel-function))
+                  ;; Process has already finished and run sentinel
+                  (progn
+                    (when preview-ps-file
+                      (condition-case nil
+                          (message "DELETING PREVIEW %S" preview-ps-file)
+                          (preview-delete-file preview-ps-file)
+                        (file-error nil)))
+                    (preview-dvi-gs-restart))
+                (setq TeX-sentinel-function
+                      (let ((fun (if preview-parsed-pdfoutput
+                                     #'preview-pdf2dsc-sentinel
+                                   #'preview-dvi-gs-dvips-sentinel)))
+                        (lambda (process command)
+                          (funcall fun process command t)))))
+            (TeX-synchronous-sentinel "Preview-DviPS" (cdr preview-gs-file)
+                                      process))
+        ;; pathological case: no previews although we sure thought so.
+        (delete-process process)
+        (unless (eq (process-status process) 'signal)
+          (preview-dvips-abort)))))
+
+(defun preview-dvi-gs-sentinel (process string)
+  "Sentinel function for rendering process.
+Gets the default PROCESS and STRING arguments
+and tries to restart Ghostscript if necessary."
+  (condition-case err
+      (let ((status (process-status process)))
+        (when (memq status '(exit signal))
+          (setq compilation-in-progress (delq process compilation-in-progress)))
+        (when (buffer-name (process-buffer process))
+          (with-current-buffer (process-buffer process)
+            (goto-char (point-max))
+            (insert-before-markers "\n" mode-name " " string)
+            (forward-char -1)
+            (insert " at "
+                    (substring (current-time-string) 0 -5))
+            (forward-char 1)
+            (TeX-command-mode-line process)
+            (when (memq status '(exit signal))
+              ;; process died.
+              ;;  Throw away culprit, go on.
+              (let* ((err (concat preview-gs-answer "\n"
+                                  (process-name process) " " string))
+                     (ov (preview-gs-behead-outstanding err)))
+                ;; NOTE: Call after-place-hook to update
+                (when ov
+                  (run-hook-with-args
+                   'preview-dvi-after-place-hook
+                   (list ov)))
+                (when (and (null ov) preview-gs-queue)
+                  (save-excursion
+                    (goto-char (if (marker-buffer (process-mark process))
+                                   (process-mark process)
+                                 (point-max)))
+                    (insert-before-markers err)))
+                (delete-process process)
+                (if (or (null ov)
+                        (eq status 'signal))
+                    ;; if process was killed explicitly by signal, or if nothing
+                    ;; was processed, we give up on the matter altogether.
+                    (progn
+                      (when preview-ps-file
+                        (condition-case nil
+                            (message "DELETING PREVIEW %S" preview-ps-file)
+                            (preview-delete-file preview-ps-file)
+                          (file-error nil)))
+                      (preview-gs-queue-empty))
+
+                  ;; restart only if we made progress since last call
+                  (let (filenames)
+                    (dolist (ov preview-gs-outstanding)
+                      (setq filenames (overlay-get ov 'filenames))
+                      (condition-case nil
+                          (preview-delete-file (nth 1 filenames))
+                        (file-error nil))
+                      (setcdr filenames nil)))
+                  (setq preview-gs-queue (nconc preview-gs-outstanding
+                                                preview-gs-queue))
+                  (setq preview-gs-outstanding nil)
+                  (preview-dvi-gs-restart)))))))
+    (error (preview-log-error err "Ghostscript" process)))
+  (preview-reraise-error process))
+
+(defun preview-dvi-gs-restart ()
+  (let ((process (preview-gs-restart)))
+    (when process
+      (set-process-sentinel process #'preview-dvi-gs-sentinel)
+      (set-process-filter process #'preview-dvi-gs-filter))))
 
 (provide 'preview-dvi)
 ;;; preview-dvi.el ends here
