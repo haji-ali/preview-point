@@ -470,7 +470,6 @@ The usual PROCESS and COMMAND arguments for
                      (preview-dvi-gs-restart)
                    (when preview-ps-file
                      (condition-case nil
-                         (message "DELETING PREVIEW %S" preview-ps-file)
                          (preview-delete-file preview-ps-file)
                        (file-error nil))))))
               ((eq status 'signal)
@@ -515,7 +514,6 @@ Gets the usual PROCESS and STRING parameters, see
                   (progn
                     (when preview-ps-file
                       (condition-case nil
-                          (message "DELETING PREVIEW %S" preview-ps-file)
                           (preview-delete-file preview-ps-file)
                         (file-error nil)))
                     (preview-dvi-gs-restart))
@@ -537,7 +535,8 @@ Gets the usual PROCESS and STRING parameters, see
 Gets the default PROCESS and STRING arguments
 and tries to restart Ghostscript if necessary."
   (condition-case err
-      (let ((status (process-status process)))
+      (let ((status (process-status process))
+            keep-preview-ps)
         (when (memq status '(exit signal))
           (setq compilation-in-progress (delq process compilation-in-progress)))
         (when (buffer-name (process-buffer process))
@@ -567,19 +566,12 @@ and tries to restart Ghostscript if necessary."
                                  (point-max)))
                     (insert-before-markers err)))
                 (delete-process process)
-                (if (or (null ov)
+                (unless (or (null ov)
                         (eq status 'signal))
-                    ;; if process was killed explicitly by signal, or if nothing
-                    ;; was processed, we give up on the matter altogether.
-                    (progn
-                      (when preview-ps-file
-                        (condition-case nil
-                            (message "DELETING PREVIEW %S" preview-ps-file)
-                            (preview-delete-file preview-ps-file)
-                          (file-error nil)))
-                      (preview-gs-queue-empty))
-
-                  ;; restart only if we made progress since last call
+                  ;; if process was killed explicitly by signal, or if
+                  ;; nothing was processed, we give up on the matter
+                  ;; altogether, otherwise restart only if we made
+                  ;; progress since last call
                   (let (filenames)
                     (dolist (ov preview-gs-outstanding)
                       (setq filenames (overlay-get ov 'filenames))
@@ -590,7 +582,14 @@ and tries to restart Ghostscript if necessary."
                   (setq preview-gs-queue (nconc preview-gs-outstanding
                                                 preview-gs-queue))
                   (setq preview-gs-outstanding nil)
-                  (preview-dvi-gs-restart)))))))
+                  ;; NOTE: Fix to correctly deleting preview-ps-file
+                  (setq keep-preview-ps (preview-dvi-gs-restart)))
+                (unless keep-preview-ps
+                  (when preview-ps-file
+                    (condition-case nil
+                        (preview-delete-file preview-ps-file)
+                      (file-error nil)))
+                  (preview-gs-queue-empty)))))))
     (error (preview-log-error err "Ghostscript" process)))
   (preview-reraise-error process))
 
