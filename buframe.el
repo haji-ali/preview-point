@@ -97,72 +97,107 @@
     map)
   "Ignore all mouse clicks.")
 
-(defun buframe--right-visible (start end)
-  "Return buffer position of the right-most column between START and END."
+(defun buframe--region-bbox (start end window)
+  "Smallest frame-pixel bbox of the VISIBLE part of START..END in WINDOW.
+Return (LEFT TOP WIDTH HEIGHT) or nil."
+  (let* ((rs (max start (window-start window)))
+         (re (min end (window-end window t)))
+         (edges (window-inside-pixel-edges window))
+         minx miny maxx maxy)
+    (when (< rs re)
   (save-excursion
-    (goto-char start)
-    (let ((right (point))
-          (cur-column (current-column)))
-      (while (< (point) end)
-        (goto-char (min (pos-eol) end))
-        (when (and (> (current-column) cur-column)
-                   (pos-visible-in-window-p))
-          (setq right (point)
-                cur-column (current-column)))
-        (forward-line 1))
-      right)))
+        (with-current-buffer (window-buffer window)
+          (goto-char rs)
+          (while (< (point) re)
+            (let* ((bol (point))
+                   (next (progn (vertical-motion 1 window) (point)))
+                   (seg-start (max rs bol))
+                   (seg-end   (min re next)))
+              (when (< seg-start seg-end)
+                (let* ((pos-in-window
+	                (pos-visible-in-window-p seg-start window t))
+                       (abs
+                        (cons (+ (nth 0 edges) (nth 0 pos-in-window))
+	                      (+ (nth 1 edges) (nth 1 pos-in-window))))
+                       (x     (car abs))
+                       (y     (cdr abs))
+                       (sz    (window-text-pixel-size window seg-start seg-end))
+                       (w     (car sz))
+                       (h     (cdr sz))
+                       (rx    (+ x w))
+                       (by    (+ y h)))
+                  (setq minx (if minx (min minx x) x)
+                        miny (if miny (min miny y) y)
+                        maxx (if maxx (max maxx rx) rx)
+                        maxy (if maxy (max maxy by) by))))
+              (goto-char next))))))
+    (when minx
+      (list minx miny (- maxx minx) (- maxy miny)))))
 
 (defun buframe-position-right-of-overlay (frame ov &optional location)
-  "Return pixel position (X . Y) for FRAME, placed to the right of overlay OV."
-  (when-let* ((buffer (overlay-buffer ov))
-              (window (get-buffer-window buffer 'visible)))
-    (let* ((start (overlay-start ov))
-           (end (overlay-end ov))
-           (posn-start (posn-at-point start window))
-           (posn-end (posn-at-point end window))
-           (location
-            (if (or (and (eq location 'top) posn-start)
-                    (and (eq location 'bottom) posn-end))
-                location
-              'middle))
-           (posn
-            (pcase location
-              ('middle (posn-at-point
-                        (with-current-buffer (overlay-buffer ov)
-                          (buframe--right-visible start end))
-                        window))
-              ('top posn-start)
-              ('bottom posn-end))))
-      (when (or posn posn-start posn-end)
-        (let* ((pframe-width (frame-pixel-width frame))
-               (pframe-height (frame-pixel-height frame))
-               (parent-frame (frame-parent frame))
-               (xmax (frame-pixel-width parent-frame))
-               (ymax (frame-pixel-height parent-frame))
-               (x (+ (car (window-inside-pixel-edges window))
-                     (if (eq location 'middle)
-                         (default-font-width)
-                       0) ;; Add another character for the cursor
-                     (- (or (car (posn-x-y (or posn posn-end posn-start))) 0)
-                        (or (car (posn-object-x-y (or posn
-                                                      posn-end posn-start)))
-                            0))))
-               (top-xy (posn-x-y (or posn-start posn posn-end)))
-               (bottom-xy (posn-x-y (or posn-end posn posn-start)))
-               (font-height (default-font-height))
-               (y-top (+ (cadr (window-pixel-edges window))
+  "Return pixel position (X . Y) for FRAME, placed to the right of overlay OV.
+Tries LOCATION first, then fallbacks. Skips if frame would overlap point."
+  (let* ((buffer (overlay-buffer ov))
+         ;; TODO: Get current window somwhow
+         (window (get-buffer-window buffer 'visible))
+         (fw (frame-pixel-width frame))
+         (fh (frame-pixel-height frame))
+         (parent (frame-parent frame))
+         (bbox (buframe--region-bbox (overlay-start ov) (overlay-end ov)
+                                     window)))
+    (cl-labels
+        ((calc (loc)
+           (let ((x 0) y)
+             (pcase loc
+               ('middle
+                ;; middle: horizontal right edge, vertical centre
+                (setq x (+ (nth 0 bbox) (nth 2 bbox))
+                      y (+ (nth 1 bbox) (/ (nth 3 bbox) 2))))
+               ('top
+                (setq x (+ (nth 0 bbox))
+                      y (- (nth 1 bbox) fh)))
+               ('bottom
+                (setq x (+ (nth 0 bbox))
+                      y (+ (nth 1 bbox) (nth 3 bbox)))))
+             (setq x (+ x
+                        (if (eq loc 'middle) (default-font-width) 0))
+                   y (+ y
                          (or (frame-parameter frame 'tab-line-height) 0)
                          (or (frame-parameter frame 'header-line-height) 0)
-                         (pcase location
-                           ('middle (+
-                                     (- (/ pframe-height 2))
-                                     (/ (+ (cdr top-xy) (cdr bottom-xy)
-                                           font-height)
-                                        2)))
-                           ('top (- (cdr top-xy) pframe-height))
-                           ('bottom (+ (cdr bottom-xy) font-height))))))
-          (cons (max 0 (min x (- xmax (or pframe-width 0))))
-                (max 0 (min y-top (- ymax (or pframe-height 0))))))))))
+                        (or (and (eq loc 'middle) (- (/ fh 2))) 0)))
+             (cons (max 0 (min x (- (frame-pixel-width parent) fw)))
+                   (max 0 (min y (- (frame-pixel-height parent) fh))))))
+         (overlap-area (pos)
+           (when (and pos bbox)
+             (let* ((ox (nth 0 bbox))
+                    (oy (nth 1 bbox))
+                    (ow (nth 2 bbox))
+                    (oh (nth 3 bbox))
+                    ;; frame rectangle
+                    (rx (car pos)) (ry (cdr pos))
+                    (rx2 (+ rx fw)) (by2 (+ ry fh))
+                    (rx-ov (+ ox ow)) (by-ov (+ oy oh))
+                    (lx (max rx ox)) (ty (max ry oy))
+                    (rx-int (min rx2 rx-ov)) (by-int (min by2 by-ov)))
+               (if (or (<= rx-int lx) (<= by-int ty))
+                   0
+                 (* (- rx-int lx) (- by-int ty)))))))
+      (let ((order (pcase (or location 'middle)
+                     ('top    '(top middle bottom))
+                     ('bottom '(bottom middle top))
+                     ('middle '(middle bottom top))))
+            best-pos best-overlap)
+        (catch 'done
+          (dolist (loc order)
+            (let ((pos (calc loc)))
+              (when pos
+                (let ((ov (overlap-area pos)))
+                  (when (eq ov 0)
+                    (throw 'done pos))
+                  (when (or (null best-overlap) (< ov best-overlap))
+                    (setq best-pos pos
+                          best-overlap ov))))))
+          best-pos)))))
 
 (defun buframe--make-buffer (name &optional locals)
   "Return a buffer with NAME configured for preview frames.
@@ -300,6 +335,7 @@ defaults."
     ;; top of the Corfu child frame.
     (when (and (bound-and-true-p exwm--connection) (frame-parent frame))
       (set-frame-parameter frame 'parent-frame nil))
+
     frame))
 
 (defun buframe-update (frame-or-name)
