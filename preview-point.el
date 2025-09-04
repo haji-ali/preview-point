@@ -353,7 +353,11 @@ OLD-FN is the `preview-toggle' and ARGS are all of its arguments."
   (when (with-current-buffer TeX-command-buffer
           (preview-point-p))
     (cl-loop for ov in ovl
-             for filename = (caar (overlay-get ov 'filenames))
+             for file = (car (overlay-get ov 'filenames))
+             when file
+             for filename = (if (consp (car file))
+                                (caar file)
+                              (car file))
              when (and filename (file-exists-p filename))
              do
              ;; No longer under construction

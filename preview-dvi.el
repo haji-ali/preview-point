@@ -218,7 +218,7 @@ See the original `preview-dvipng-abort'"
       (unless (>= (nth 2 TeX-active-tempdir) 1)
         (delete-directory (nth 0 TeX-active-tempdir))))))
 
-(defun preview-dvi-sentinel (process command &optional placeall)
+(defun preview-dvi-sentinel (process _command &optional placeall)
   "Sentinel function for indirect rendering DviPNG process.
 The usual PROCESS and COMMAND arguments for
 `TeX-sentinel-function' apply.  Places all snippets if PLACEALL
